@@ -12,7 +12,7 @@ import pandas as pd
 import scipy.io as sio
 
 print("Loading data")
-raw_data = sio.loadmat('/home/larry/Data/BCI_Competition/IV/BCICIV_1calib_1000Hz_mat/BCICIV_calib_ds1a_1000Hz.mat')
+raw_data = sio.loadmat('/home/larry/Data/BCI_Competition/IV/BCICIV_1calib_1000Hz_mat/BCICIV_calib_ds1b_1000Hz.mat')
 
 
 subjectA_recordings = np.array(raw_data['cnt'])
@@ -99,11 +99,54 @@ reshaped_targets = np.reshape(targets[0:truncation_length,:], [-1,timesteps,num_
 x_train = reshaped_inputs
 y_train = reshaped_targets
 
-# Generate dummy validation data
-#x_val = np.random.random((batch_size * 3, timesteps, data_dim))
-#y_val = np.random.random((batch_size * 3, num_classes))
 
-print("Training model")
-model.fit(x_train, y_train, batch_size=batch_size, shuffle=False, nb_epoch = num_epochs)#, epochs=num_epochs)
+#model.fit(x_train, y_train, batch_size=batch_size, shuffle=False, nb_epoch = num_epochs)#, epochs=num_epochs)
 
 #Need to implement prediction/validation
+
+
+eval_folder_data = "/home/larry/Data/BCI_Competition/IV/BCICIV_1_eval/BCICIV_1eval_1000Hz_mat/BCICIV_eval_ds1b_1000Hz.mat"
+eval_folder_labels = "/home/larry/Data/BCI_Competition/IV/BCICIV_1_eval/true_labels_1/BCICIV_eval_ds1b_1000Hz_true_y.mat"
+raw_eval_data = sio.loadmat(eval_folder_data)
+subject_eval_recordings = np.array(raw_eval_data['cnt'])
+raw_label_data = sio.loadmat(eval_folder_labels)
+un_nan_labels = np.array([x if np.isfinite(x) else 0 for x in raw_label_data["true_y"]]) #This is not the true test, as the NAN vals shouldnot be counted...
+
+
+val_recording_len = np.shape(subject_eval_recordings)[0]
+
+
+print("Building val targets")
+val_targets = np.zeros([val_recording_len, 3])
+cue_steps_remaining = 0
+cue_index = 0 #{0:0, -1:1, 1:2}
+cue_number = 0
+for t in range(val_recording_len):
+
+            #If new queue is reached
+        cue_type = un_nan_labels[t]
+        if cue_type == -1:
+            cue_index = 1
+        elif cue_type== 1:
+            cue_index = 2
+	elif cue_type == 0:
+	    cue_index = 0
+        else:
+                raise(exception("unrecognized cue type"))
+        val_targets[t, cue_index] = 1
+
+
+
+val_truncation_length = (val_recording_len-(val_recording_len%(timesteps*batch_size))) #Might need to make it  (recording_len-(recording_len%(timesteps*batch_size)))
+
+
+reshaped_inputs_val = np.reshape(subject_eval_recordings[0:val_truncation_length,:], [-1,timesteps,data_dim])
+reshaped_targets_val = np.reshape(val_targets[0:val_truncation_length,:], [-1,timesteps,num_classes])
+
+x_val = reshaped_inputs_val
+y_val = reshaped_targets_val
+
+
+print("Training model")
+
+model.fit(x_train, y_train, batch_size=batch_size, shuffle=False, nb_epoch = num_epochs, validation_data=(x_val, y_val))#, epochs=num_epochs)
