@@ -38,6 +38,7 @@ from keras import metrics
 import tensorflow as tf
 from sklearn.metrics import mean_squared_error
 
+import copy
 
 
     #print(y_true.get_shape().as_list())
@@ -156,6 +157,16 @@ un_nan_labels = np.array([x if np.isfinite(x) else 0 for x in raw_label_data["tr
 val_recording_len = np.shape(subject_eval_recordings)[0]
 val_targets = np.reshape(un_nan_labels, [-1,1])
 
+#To determine when to count the validation metric. (Designed to conform with the contest parameters)
+val_toggle = np.array([1 if np.isfinite(x) else 0 for x in raw_label_data["true_y"]]) #This line gets rid of the NANs (which presumably should not be counted)
+
+last = 0
+for i, val in enumerate(val_targets[:,0]):
+    if last == 0 and val != 0:
+        val_toggle[i:i+sample_rate] = 0
+    last = val
+
+
 
 ###################################
 #All of this needs to be written s.t. the validation inputs contain the previous predictions from the model and not the ground truth. 
@@ -203,6 +214,7 @@ for e in range(num_epochs):
     print("Validating model")
     prediciton_inputs = [0] #Initial prediciton inputs. This is equivalent to a zero in the target sequence
     accuracy_sum = 0
+    num_val_measures = 0
     for i in range(val_recording_len):
         current_recording_input = subject_eval_recordings[i,:]
         val_input_vec = np.concatenate((current_recording_input, prediciton_inputs), axis=0)
@@ -216,8 +228,10 @@ for e in range(num_epochs):
         #Now compute error between predictions and val_target_mat
         #print("targets ", type(val_target_mat))
         #print("prediciton", type(predictions))
-        cur_target_MSEuracy = target_MSE(val_target_mat, predictions, val=True)
-        accuracy_sum += cur_target_MSEuracy
+        if val_toggle[i] == 1:
+            num_val_measures += 1
+            cur_target_MSE = target_MSE(val_target_mat, predictions, val=True)
+            accuracy_sum += cur_target_MSE
 
         #Might want to include additional metrics in here...
 
@@ -225,7 +239,10 @@ for e in range(num_epochs):
         prediciton_inputs = predictions[0,0,59:60]
 
         if i%100000==0:
-            acc_so_far = accuracy_sum/(i+1)
+            if num_val_measures > 0:
+                acc_so_far = accuracy_sum/num_val_measures
+            else:
+                acc_so_far = "N/A"
             print("     Target MSE: ",  acc_so_far, "  ;  {0:.3f}".format((i/val_recording_len)*100), " percent complete")
     print("Target MSE for val epoch ", e+1, " is ", acc_so_far)
 

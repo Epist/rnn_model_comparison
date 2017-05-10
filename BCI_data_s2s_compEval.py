@@ -161,3 +161,14 @@ y_val = reshaped_targets_val
 print("Training model")
 
 model.fit(x_train, y_train, batch_size=batch_size, shuffle=False, nb_epoch = num_epochs, validation_data=(x_val, y_val))#, epochs=num_epochs)
+
+#Need to figure out how to only include some of the score for the summary validation score
+
+#To determine when to count the validation metric. (Designed to conform with the contest parameters)
+val_toggle = np.array([1 if np.isfinite(x) else 0 for x in raw_label_data["true_y"]]) #This line gets rid of the NANs (which presumably should not be counted)
+
+last = 0
+for i, val in enumerate(val_targets[:,0]):
+    if last == 0 and val != 0:
+        val_toggle[i:i+sample_rate] = 0
+    last = val
