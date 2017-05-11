@@ -6,10 +6,22 @@
 #Implement validation and testing
 #Implement training with multiple subjects and a contextual vector/embedding for their subject IDs (the embedding might better facilitate testing with an unknown subject?)
 
+#Add early stopping
+
 import numpy as np
 import pandas as pd
 
 import scipy.io as sio
+from sklearn.metrics import mean_squared_error
+
+
+timesteps = 64
+batch_size = 32
+num_epochs = 10
+num_lstm_layers = 2
+
+val_split = .8 #The percentage to asigne to the training set
+val_gap = .5 #In seconds
 
 print("Loading data")
 raw_data = sio.loadmat('/home/larry/Data/BCI_Competition/IV/BCICIV_1calib_1000Hz_mat/BCICIV_calib_ds1b_1000Hz.mat')
@@ -20,6 +32,7 @@ subject_cues_raw = raw_data['mrk'][0,0]
 sample_rate = raw_data['nfo'][0,0][0][0][0]
 cue_length_in_secs = 4
 cue_steps = cue_length_in_secs * sample_rate
+val_gap_samples = int(val_gap * sample_rate)
 
 #np.shape(subject_cues)
 #print(raw_data.keys())
@@ -37,37 +50,6 @@ targets = np.zeros([recording_len, 1])
 #cue_number = 0
 for i, cue_index in enumerate(subject_cue_times):
     targets[cue_index:cue_index+cue_steps] = subject_cue_values[i]
-"""
-print("Building targets")
-recording_len = np.shape(subject_recordings)[0]
-targets = np.zeros([recording_len, 3])
-cue_steps_remaining = 0
-cue_index = 0 #{0:0, -1:1, 1:2}
-cue_number = 0
-for t in range(recording_len):
-    if cue_number < numCues:
-        if subject_cue_times[cue_number] == t:
-            #If new queue is reached
-            cue_type = subject_cue_values[cue_number]
-            if cue_type == -1:
-                cue_index = 1
-            elif cue_type== 1:
-                cue_index = 2
-            else:
-                raise(exception("unrecognized cue type"))
-            cue_steps_remaining = cue_steps-1
-            targets[t, cue_index] = 1
-            cue_number += 1
-        elif cue_steps_remaining > 0:
-            #If last queue is still active
-            cue_steps_remaining -= 1
-            targets[t, cue_index] = 1
-        else:
-            targets[t, 0] = 1 #Append a value representing no active cue
-    else:
-            targets[t, 0] = 1 #Append a value representing no active cue
-"""
-#Stateful model
 
 
 from keras.models import Sequential
@@ -75,12 +57,7 @@ from keras.layers import LSTM, Dense
 import numpy as np
 
 data_dim = np.shape(subject_recordings)[1]
-timesteps = 64
 num_classes = 1
-batch_size = 32
-num_epochs = 10
-num_lstm_layers = 2
-
 
 # Expected input batch shape: (batch_size, timesteps, data_dim)
 # Note that we have to provide the full batch_input_shape since the network is stateful.
@@ -98,17 +75,31 @@ model.compile(loss='mean_squared_error',
               optimizer='rmsprop',
               metrics=['mean_squared_error'])
 
-# Generate dummy training data
-#x_train = np.random.random((batch_size * 10, timesteps, data_dim))
-#y_train = np.random.random((batch_size * 10, num_classes))
-truncation_length = (recording_len-(recording_len%(timesteps*batch_size))) #Might need to make it  (recording_len-(recording_len%(timesteps*batch_size)))
+#Split the test data for validation
 
-reshaped_inputs = np.reshape(subject_recordings[0:truncation_length,:], [-1,timesteps,data_dim])
-reshaped_targets = np.reshape(targets[0:truncation_length,:], [-1,timesteps,num_classes])
+split_point = int(recording_len * val_split)
 
-x_train = reshaped_inputs
-y_train = reshaped_targets
+train_input_seq = subject_recordings[0:split_point]
+val_input_seq = subject_recordings[split_point+val_gap_samples:]
+train_target_seq = targets[0:split_point]
+val_target_seq = targets[split_point+val_gap_samples:]
 
+train_raw_len = len(train_input_seq)
+truncation_length_train = (train_raw_len-(train_raw_len%(timesteps*batch_size))) #Might need to make it  (recording_len-(recording_len%(timesteps*batch_size)))
+val_raw_len = len(val_input_seq)
+truncation_length_val = (val_raw_len-(val_raw_len%(timesteps*batch_size))) #Might need to make it  (recording_len-(recording_len%(timesteps*batch_size)))
+
+
+reshaped_inputs_train = np.reshape(train_input_seq[0:truncation_length_train,:], [-1,timesteps,data_dim])
+reshaped_targets_train = np.reshape(train_target_seq[0:truncation_length_train,:], [-1,timesteps,num_classes])
+reshaped_inputs_val = np.reshape(val_input_seq[0:truncation_length_val,:], [-1,timesteps,data_dim])
+reshaped_targets_val = np.reshape(val_target_seq[0:truncation_length_val,:], [-1,timesteps,num_classes])
+
+x_train = reshaped_inputs_train
+y_train = reshaped_targets_train
+
+x_val = reshaped_inputs_val
+y_val = reshaped_targets_val
 
 #model.fit(x_train, y_train, batch_size=batch_size, shuffle=False, nb_epoch = num_epochs)#, epochs=num_epochs)
 
@@ -123,40 +114,22 @@ raw_label_data = sio.loadmat(eval_folder_labels)
 un_nan_labels = np.array([x if np.isfinite(x) else 0 for x in raw_label_data["true_y"]]) #This is not the true test, as the NAN vals shouldnot be counted...
 
 
-val_recording_len = np.shape(subject_eval_recordings)[0]
-val_targets = np.reshape(un_nan_labels, [-1,1])
-
-"""
-print("Building val targets")
-val_targets = np.zeros([val_recording_len, 3])
-cue_steps_remaining = 0
-cue_index = 0 #{0:0, -1:1, 1:2}
-cue_number = 0
-for t in range(val_recording_len):
-
-            #If new queue is reached
-        cue_type = un_nan_labels[t]
-        if cue_type == -1:
-            cue_index = 1
-        elif cue_type== 1:
-            cue_index = 2
-	elif cue_type == 0:
-	    cue_index = 0
-        else:
-                raise(exception("unrecognized cue type"))
-        val_targets[t, cue_index] = 1
-"""
+test_recording_len = np.shape(subject_eval_recordings)[0]
+test_targets = np.reshape(un_nan_labels, [-1,1])
 
 
-val_truncation_length = (val_recording_len-(val_recording_len%(timesteps*batch_size))) #Might need to make it  (recording_len-(recording_len%(timesteps*batch_size)))
+
+test_truncation_length = (test_recording_len-(test_recording_len%(timesteps*batch_size))) #Might need to make it  (recording_len-(recording_len%(timesteps*batch_size)))
 
 
-reshaped_inputs_val = np.reshape(subject_eval_recordings[0:val_truncation_length,:], [-1,timesteps,data_dim])
-reshaped_targets_val = np.reshape(val_targets[0:val_truncation_length,:], [-1,timesteps,num_classes])
+#reshaped_inputs_test = np.reshape(subject_eval_recordings[0:test_truncation_length,:], [-1,timesteps,data_dim])
+#reshaped_targets_test = np.reshape(test_targets[0:test_truncation_length,:], [-1,timesteps,num_classes])
 
-x_val = reshaped_inputs_val
-y_val = reshaped_targets_val
+#x_test = reshaped_inputs_test
+#y_test = reshaped_targets_test
 
+x_test = subject_eval_recordings
+y_test = test_targets
 
 print("Training model")
 
@@ -164,11 +137,69 @@ model.fit(x_train, y_train, batch_size=batch_size, shuffle=False, nb_epoch = num
 
 #Need to figure out how to only include some of the score for the summary validation score
 
+
+#Now run the test on the  test set as per the competition specs
+#Could predict on batches for this one though...
+#Batch testing not presently implemented
+
+
 #To determine when to count the validation metric. (Designed to conform with the contest parameters)
 val_toggle = np.array([1 if np.isfinite(x) else 0 for x in raw_label_data["true_y"]]) #This line gets rid of the NANs (which presumably should not be counted)
 
 last = 0
-for i, val in enumerate(val_targets[:,0]):
+for i, val in enumerate(test_targets[:,0]):
     if last == 0 and val != 0:
         val_toggle[i:i+sample_rate] = 0
     last = val
+
+
+def target_MSE(y_true, y_pred, val=False):
+    tars = y_true[:, :, data_dim]
+    preds = y_pred[:, :, num_classes]
+    #This only works for a single example at a time
+    print(shape(tars))
+    print(shape(preds))
+    #tars = y_true[:, :, data_dim]
+    #preds = y_pred[:, :, num_classes]
+    return mean_squared_error(tars, preds)
+
+def rebuild_model_for_test(model):
+    #Take the model, and build the same model with the same weights but with different batch size and numsteps parameters
+    
+    test_model = build_model(1, 1, weights = model.get_weights())#Transfer the weights from the old model to the new model)
+    return test_model
+
+print("Testing model")
+prediciton_inputs = [0] #Initial prediciton inputs. This is equivalent to a zero in the target sequence
+accuracy_sum = 0
+num_val_measures = 0
+for i in range(test_recording_len):
+    current_recording_input = x_test[i,:]
+    val_input_vec = np.concatenate((current_recording_input, prediciton_inputs), axis=0)
+    val_tar_vec = y_test[i,:]
+
+    val_input_mat = np.reshape(val_input_vec, [1, 1, full_data_dim])
+    val_target_mat = np.reshape(val_tar_vec, [1, 1, full_data_dim]) 
+
+    predictions = val_model.predict_on_batch(val_input_mat)
+
+    #Now compute error between predictions and val_target_mat
+    #print("targets ", type(val_target_mat))
+    #print("prediciton", type(predictions))
+    if val_toggle[i] == 1:
+        num_val_measures += 1
+        cur_target_MSE = target_MSE(val_target_mat, predictions, val=True)
+        accuracy_sum += cur_target_MSE
+
+    #Might want to include additional metrics in here...
+
+    #Now extract the new prediciton_inputs from predictions
+    prediciton_inputs = predictions[0,0,59:60]
+
+    if i%100000==0:
+        if num_val_measures > 0:
+            acc_so_far = accuracy_sum/num_val_measures
+        else:
+            acc_so_far = "N/A"
+        print("     Target MSE: ",  acc_so_far, "  ;  {0:.3f}".format((i/val_recording_len)*100), " percent complete")
+print("Target MSE for test is ", acc_so_far)
