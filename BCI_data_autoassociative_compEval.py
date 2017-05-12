@@ -213,7 +213,7 @@ all_data_vars_tar = np.concatenate((subject_eval_recordings, test_targets), axis
 shifted_data_vars_tar = np.concatenate((np.zeros([1,np.shape(all_data_vars_tar)[1]]),
                                     all_data_vars_tar[:(test_recording_len-1), :]) , axis=0)
 
-x_test = all_data_vars_tar
+x_test = subject_eval_recordings
 y_test = shifted_data_vars_tar
 
 #print(np.shape(all_data_vars_tar))
@@ -277,12 +277,12 @@ for e in range(num_epochs):
         #Now extract the new prediciton_inputs from predictions
         prediciton_inputs = predictions[0,0,59:60]
 
-        if i%100000==0:
+        if i%10000==0:
             if num_val_measures > 0:
                 acc_so_far = accuracy_sum/num_val_measures
             else:
                 acc_so_far = "N/A"
-            print("     Target MSE: ",  acc_so_far, "  ;  {0:.3f}".format((i/test_recording_len)*100), " percent complete")
+            print("     Target MSE: ",  acc_so_far, "  ;  {0:.2f}".format((i/len(x_val))*100), " percent complete")
     print("Target MSE for val epoch ", e+1, " is ", acc_so_far)
 
 
@@ -323,5 +323,5 @@ for i in range(test_recording_len):
             acc_so_far = accuracy_sum/num_val_measures
         else:
             acc_so_far = "N/A"
-        print("     Target MSE: ",  acc_so_far, "  ;  {0:.3f}".format((i/test_recording_len)*100), " percent complete")
+        print("     Target MSE: ",  acc_so_far, "  ;  {0:.2f}".format((i/test_recording_len)*100), " percent complete")
 print("Target MSE for test is ", acc_so_far)

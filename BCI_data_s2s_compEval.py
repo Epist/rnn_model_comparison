@@ -17,7 +17,7 @@ from sklearn.metrics import mean_squared_error
 
 timesteps = 64
 batch_size = 32
-num_epochs = 10
+num_epochs = 5
 num_lstm_layers = 2
 
 val_split = .8 #The percentage to asigne to the training set
@@ -63,17 +63,28 @@ num_classes = 1
 # Note that we have to provide the full batch_input_shape since the network is stateful.
 # the sample of index i in batch k is the follow-up for the sample i in batch k-1.
 print("Building model")
-model = Sequential()
-model.add(LSTM(32, return_sequences=True, stateful=True,
-               batch_input_shape=(batch_size, timesteps, data_dim)))
-for i in range(num_lstm_layers-1):
-    model.add(LSTM(32, return_sequences=True, stateful=True))
-#model.add(LSTM(32, stateful=True))
-model.add(Dense(num_classes, activation='linear'))
+def build_model(batch_size_, timesteps_, weights = None):
 
-model.compile(loss='mean_squared_error',
-              optimizer='rmsprop',
-              metrics=['mean_squared_error'])
+    model = Sequential()
+    model.add(LSTM(32, return_sequences=True, stateful=True,
+                   batch_input_shape=(batch_size_, timesteps_, data_dim)))
+    for i in range(num_lstm_layers-1):
+        model.add(LSTM(32, return_sequences=True, stateful=True))
+    #model.add(LSTM(32, stateful=True))
+    model.add(Dense(num_classes, activation='linear'))
+
+    model.compile(loss='mean_squared_error',
+                  optimizer='rmsprop',
+                  metrics=['mean_squared_error'])
+
+    if weights==None:
+        return model
+    else:
+        #Change the weights of the model to the weights specified in the weights variable
+        model.set_weights(weights)#Transfer the weights from the old model to the new model
+        return model
+
+model = build_model(batch_size, timesteps) #Define and build the model for training
 
 #Split the test data for validation
 
@@ -170,36 +181,38 @@ def rebuild_model_for_test(model):
     return test_model
 
 print("Testing model")
-prediciton_inputs = [0] #Initial prediciton inputs. This is equivalent to a zero in the target sequence
+test_model = rebuild_model_for_test(model)
+#prediciton_inputs = [0] #Initial prediciton inputs. This is equivalent to a zero in the target sequence
 accuracy_sum = 0
 num_val_measures = 0
 for i in range(test_recording_len):
-    current_recording_input = x_test[i,:]
-    val_input_vec = np.concatenate((current_recording_input, prediciton_inputs), axis=0)
-    val_tar_vec = y_test[i,:]
+    #current_recording_input = x_test[i,:]
+    #val_input_vec = np.concatenate((current_recording_input, prediciton_inputs), axis=0)
+    test_input_vec = x_test[i,:]
+    test_tar_vec = y_test[i,:]
 
-    val_input_mat = np.reshape(val_input_vec, [1, 1, full_data_dim])
-    val_target_mat = np.reshape(val_tar_vec, [1, 1, full_data_dim]) 
+    test_input_mat = np.reshape(test_input_vec, [1, 1, data_dim])
+    test_target_mat = np.reshape(test_tar_vec, [1, 1, num_classes]) 
 
-    predictions = val_model.predict_on_batch(val_input_mat)
+    predictions = test_model.predict_on_batch(test_input_mat)
 
-    #Now compute error between predictions and val_target_mat
-    #print("targets ", type(val_target_mat))
+    #Now compute error between predictions and test_target_mat
+    #print("targets ", type(test_target_mat))
     #print("prediciton", type(predictions))
     if val_toggle[i] == 1:
         num_val_measures += 1
-        cur_target_MSE = target_MSE(val_target_mat, predictions, val=True)
+        cur_target_MSE = target_MSE(test_target_mat, predictions, val=True)
         accuracy_sum += cur_target_MSE
 
     #Might want to include additional metrics in here...
 
     #Now extract the new prediciton_inputs from predictions
-    prediciton_inputs = predictions[0,0,59:60]
+    #prediciton_inputs = predictions[0,0,59:60]
 
     if i%100000==0:
         if num_val_measures > 0:
             acc_so_far = accuracy_sum/num_val_measures
         else:
             acc_so_far = "N/A"
-        print("     Target MSE: ",  acc_so_far, "  ;  {0:.3f}".format((i/val_recording_len)*100), " percent complete")
+        print("     Target MSE: ",  acc_so_far, "  ;  {0:.3f}".format((i/test_recording_len)*100), " percent complete")
 print("Target MSE for test is ", acc_so_far)
