@@ -42,7 +42,13 @@ import copy
 
 val_split = .8 #The percentage to asigne to the training set
 val_gap = .5 #In seconds
+timesteps = 64
+num_classes = 1
+batch_size = 32
+num_epochs = 5
+num_lstm_layers = 2
 
+cue_length_in_secs = 4
 
     #print(y_true.get_shape().as_list())
     #return tf.shape(y_true)[2]
@@ -54,7 +60,6 @@ raw_data = sio.loadmat('/home/larry/Data/BCI_Competition/IV/BCICIV_1calib_1000Hz
 subject_recordings = np.array(raw_data['cnt'])
 subject_cues_raw = raw_data['mrk'][0,0]
 sample_rate = raw_data['nfo'][0,0][0][0][0]
-cue_length_in_secs = 4
 cue_steps = cue_length_in_secs * sample_rate
 val_gap_samples = int(val_gap * sample_rate)
 
@@ -82,11 +87,7 @@ for i, cue_index in enumerate(subject_cue_times):
 #Stateful model
 
 data_dim = np.shape(subject_recordings)[1]
-timesteps = 64
-num_classes = 1
-batch_size = 32
-num_epochs = 5
-num_lstm_layers = 2
+
 
 full_data_dim = data_dim + num_classes
 
